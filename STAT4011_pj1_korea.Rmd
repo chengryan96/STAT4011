@@ -1,0 +1,31 @@
+---
+title: "STAT4011_pj1_korea"
+output: html_document
+---
+
+data source : https://www.kaggle.com/kimjihoo/coronavirusdataset
+
+possible use dataset
+policy, searchtrend, TimeProvince
+
+load the required library
+```{r}
+library(ggplot2)
+```
+
+set seed and read data
+```{r}
+set.seed(4011)
+file_path = "C:/Users/cheng/OneDrive/Desktop/hw/STAT4011/dataset"
+case =  read.csv(paste0(file_path, '/Time.csv'))
+policy = read.csv(paste0(file_path, '/Policy.csv'))
+```
+
+
+merge and plot
+```{r}
+a = merge(case, policy, by.x='date', by.y='start_date', all = TRUE)
+qplot(x = date, y=confirmed, data = a, geom=c("point", "line"))
+plot(x = a$date, y=a$confirmed)
+```
+
