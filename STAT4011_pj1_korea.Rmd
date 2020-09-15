@@ -23,6 +23,7 @@ policy = read.csv(paste0(file_path, '/Policy.csv'))
 search_trend = read.csv(paste0(file_path, '/SearchTrend.csv'))
 province = read.csv(paste0(file_path, '/TimeProvince.csv'), stringsAsFactors = FALSE)
 weather = read.csv(paste0(file_path, '/Weather.csv'), stringsAsFactors = FALSE)
+timeage = read.csv(paste0(file_path, '/Timeage.csv'), stringsAsFactors = FALSE, row.names=NULL)
 ```
 
 
@@ -59,6 +60,14 @@ correlation
 corr_df = as.data.frame(cbind(df$confirmed, df$coronavirus, df$flu, df$policy_id))
 colnames(corr_df) = c('confirmed', 'keyword_covid19', 'keyword_flu', 'gov_policy')
 corr = cor(corr_df)
+```
+
+correlation between time and age
+```{r}
+timeage_df = timeage[,c(-2,-5)]
+timeage_df$date = as.Date(timeage_df$date)
+length(rownames(timeage_df)) = length(timeage_df$date)
+cor(timeage_df[2:3])
 ```
 
 
@@ -107,6 +116,20 @@ pro_stand_df[,1] = anytime::anydate(pro_stand_df[,1])
 colnames(pro_stand_df)[1] = 'date'
 ```
 
+
+standardize it by x-min/sd
+```{r}
+normalize <- function(x)
+{
+    return((x- mean(x)) /sd(x))
+}
+pro_stand_df = apply(pro_df[,2:ncol(pro_df)], 2, normalize)
+pro_stand_df = data.frame(pro_df[,1], pro_stand_df)
+pro_stand_df[,1] = anytime::anydate(pro_stand_df[,1])
+colnames(pro_stand_df)[1] = 'date'
+```
+
+
 plot TimeProvince
 ```{r, fig.width = 8, fig.height = 8}
 df = pro_stand_df
@@ -132,6 +155,32 @@ geom_line(data = df, aes(x = date, y = Ulsan, color = 'Jeollabuk'))+
 ylab('')
 ```
 
+Only plot the graph with the 4 country with most confirmed case
+(without standardization)
+```{r}
+df = pro_df
+ggplot() + 
+geom_line(data = df, aes(x = date, y = Seoul, color = 'Seoul'))+
+geom_line(data = df, aes(x = date, y = Daegu, color = 'Daegu'))+
+geom_line(data = df, aes(x = date, y = Gyeonggi, color = 'Gyeonggi'))+
+geom_line(data = df, aes(x = date, y = Gyeongsangbuk, color = 'Gyeongsangbuk'))  
+```
+
+```{r}
+df = pro_stand_df
+ggplot() + 
+geom_line(data = df, aes(x = date, y = Seoul, color = 'Seoul'))+
+geom_line(data = df, aes(x = date, y = Daegu, color = 'Daegu'))+
+geom_line(data = df, aes(x = date, y = Gyeonggi, color = 'Gyeonggi'))+
+geom_line(data = df, aes(x = date, y = Gyeongsangbuk, color = 'Gyeongsangbuk'))
+```
+correlation of only this 4 country
+```{r}
+corr_4_df = data.frame(pro_df$Seoul, pro_df$Daegu, pro_df$Gyeonggi, pro_df$Gyeongsangbuk)
+colnames(corr_4_df) = c('Seoul', 'Daegu', 'Gyeonggi', 'Gyeongsangbuk')
+corr_4 = cor(corr_4_df)
+```
+
 find the correlation of the interesting factor
 (move the place)
 ```{r}
@@ -139,3 +188,4 @@ find the correlation of the interesting factor
 corr_pro = cor(pro_df[,2:ncol(pro_df)])
 ```
 
+train model? search for models
