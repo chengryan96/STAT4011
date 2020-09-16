@@ -24,6 +24,7 @@ search_trend = read.csv(paste0(file_path, '/SearchTrend.csv'))
 province = read.csv(paste0(file_path, '/TimeProvince.csv'), stringsAsFactors = FALSE)
 weather = read.csv(paste0(file_path, '/Weather.csv'), stringsAsFactors = FALSE)
 timeage = read.csv(paste0(file_path, '/Timeage.csv'), stringsAsFactors = FALSE, row.names=NULL)
+timegen = read.csv(paste0(file_path, '/TimeGender.csv'), stringsAsFactors = FALSE, row.names=NULL)
 ```
 
 
@@ -31,6 +32,10 @@ merge and plot for csae, policy and search trend
 ```{r, fig.width = 8, fig.height = 5}
 case_policy_df = merge(case, policy, by.x='date', by.y='start_date', all = TRUE)[-1,]
 case_policy_search = merge(case_policy_df, search_trend, by.x='date', by.y='date')
+# non cumulative
+case_policy_search$confirmed = c(0, diff(case_policy_search$confirmed))
+case_policy_search$test = c(0, diff(case_policy_search$test))
+case_policy_search$deceased = c(0, diff(case_policy_search$deceased))
 df = case_policy_search
 df$policy_id = as.numeric(df$policy_id)
 df$date = as.Date(df$date)
@@ -45,10 +50,15 @@ for (i in 1:nrow(df)){
 #plot the graph
 ggplot() + 
 geom_line(data = df, aes(x = date, y = confirmed, color = 'confirmed')) + 
-geom_line(data = df, aes(x = date, y = released, color = 'released'))+ 
+geom_line(data = df, aes(x = date, y = deceased, color = 'deceased'))+
+#geom_line(data = df, aes(x = date, y = test, color = 'test'))+
 geom_point(data = df, aes(x = date, y = policy_id, color = 'government applied policy'), size = 0.01) +
 ylab('')
+
+ggplot() +
+geom_line(data = df, aes(x = date, y = deceased, color = 'deceased'))
 # plot search trend
+
 ggplot() +
 geom_line(data = df, aes(x = date, y = coronavirus, color = 'ppl search for coronavirus'))
 
@@ -62,13 +72,122 @@ colnames(corr_df) = c('confirmed', 'keyword_covid19', 'keyword_flu', 'gov_policy
 corr = cor(corr_df)
 ```
 
+do a linear regression and see how they weighted
+```{r}
+lin_reg_keywords = lm(confirmed ~ ., data = corr_df)
+summary(lin_reg_keywords)
+vip::vip(lin_reg_keywords)
+step(lin_reg_keywords)
+new_keywords_linreg = lm(formula = confirmed ~ keyword_covid19 + keyword_flu, data = corr_df)
+summary(new_keywords_linreg)
+vip::vip(new_keywords_linreg)
+```
+
 correlation between time and age
 ```{r}
 timeage_df = timeage[,c(-2,-5)]
 timeage_df$date = as.Date(timeage_df$date)
-length(rownames(timeage_df)) = length(timeage_df$date)
-cor(timeage_df[2:3])
+timeage_df = as.data.frame(split(timeage_df, timeage_df$age))
+timeage_df = data.frame(timeage_df$X0s.date, timeage_df$X0s.confirmed, timeage_df$X10s.confirmed, timeage_df$X20s.confirmed, timeage_df$X30s.confirmed, timeage_df$X40s.confirmed, timeage_df$X50s.confirmed, timeage_df$X60s.confirmed, timeage_df$X70s.confirmed, timeage_df$X80s.confirmed)
+colnames(timeage_df) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+rownames(timeage_df) = timeage_df$date
+age_confirm_corr = cor(timeage_df[,-1])
+#non cumulation
+time_non_cumu = data.frame(timeage_df$date[-1], apply(timeage_df[,-1], 2, diff))
+colnames(time_non_cumu) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
 ```
+
+time age death
+```{r}
+timeage = read.csv(paste0(file_path, '/Timeage.csv'), stringsAsFactors = FALSE, row.names=NULL)
+timeage_death_df = timeage
+timeage_death_df = as.data.frame(split(timeage_death_df, timeage_death_df$age))
+
+timeage_death_df = data.frame(timeage_death_df$X0s.date, timeage_death_df$X0s.deceased, timeage_death_df$X10s.deceased, timeage_death_df$X20s.deceased, timeage_death_df$X30s.deceased, timeage_death_df$X40s.deceased, timeage_death_df$X50s.deceased, timeage_death_df$X60s.deceased, timeage_death_df$X70s.deceased, timeage_death_df$X80s.deceased)
+colnames(timeage_death_df) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+timeage_death_df$date = as.Date(timeage_death_df$date)
+#non cumu
+time_death_non_cumu = data.frame(timeage_death_df$date[-1], apply(timeage_death_df[,-1], 2, diff))
+colnames(time_death_non_cumu) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+```
+
+time gen
+```{r}
+timegen_df = as.data.frame(split(timegen, timegen$sex))
+timegen_confirm_df = data.frame(timegen_df$female.date, timegen_df$female.confirmed, timegen_df$male.confirmed)
+colnames(timegen_confirm_df) = c('date', 'female', 'male')
+timegen_confirm_df$date = as.Date(timegen_confirm_df$date)
+#non cumu
+timegen_confirm_noncumu_df = data.frame(timegen_confirm_df$date[-1], apply(timegen_confirm_df[,-1], 2, diff))
+colnames(timegen_confirm_noncumu_df) = c('date', 'female', 'male')
+```
+
+time gen death
+```{r}
+timegen_df = as.data.frame(split(timegen, timegen$sex))
+timegen_death_df = data.frame(timegen_df$female.date, timegen_df$female.deceased, timegen_df$male.deceased)
+colnames(timegen_death_df) = c('date', 'female', 'male')
+timegen_death_df$date = as.Date(timegen_death_df$date)
+#non cumu
+timegen_death_noncumu_df = data.frame(timegen_death_df$date[-1], apply(timegen_death_df[,-1], 2, diff))
+colnames(timegen_death_noncumu_df) = c('date', 'female', 'male')
+```
+
+plot time gen
+```{r}
+df = timegen_death_noncumu_df
+ggplot() + 
+geom_line(data = df, aes(x = date, y = female, color = 'female')) + 
+geom_line(data = df, aes(x = date, y = male, color = 'male'))+
+ylab('')
+```
+
+
+plot the graph
+```{r}
+df = time_non_cumu
+ggplot() + 
+geom_line(data = df, aes(x = date, y = a0s, color = '0s')) + 
+geom_line(data = df, aes(x = date, y = a10s, color = '10s'))+ 
+geom_line(data = df, aes(x = date, y = a20s, color = '20s'))+
+geom_line(data = df, aes(x = date, y = a30s, color = '30s'))+
+geom_line(data = df, aes(x = date, y = a40s, color = '40s'))+
+geom_line(data = df, aes(x = date, y = a50s, color = '50s'))+
+geom_line(data = df, aes(x = date, y = a60s, color = '60s'))+
+geom_line(data = df, aes(x = date, y = a70s, color = '70s'))+
+geom_line(data = df, aes(x = date, y = a70s, color = '80s'))+
+
+ylab('')
+```
+
+scale it to see if there is any difference
+```{r}
+normalize <- function(x)
+{
+    return((x- mean(x)) /sd(x))
+}
+timeage_stand_df = apply(timeage_df[,2:ncol(timeage_df)], 2, normalize)
+timeage_stand_df = data.frame(timeage_df[,1], timeage_stand_df)
+timeage_stand_df[,1] = anytime::anydate(timeage_stand_df[,1])
+colnames(timeage_stand_df)[1] = 'date'
+```
+
+```{r}
+df = timeage_stand_df
+ggplot() + 
+geom_line(data = df, aes(x = date, y = a0s, color = '0s')) + 
+geom_line(data = df, aes(x = date, y = a10s, color = '10s'))+ 
+geom_line(data = df, aes(x = date, y = a20s, color = '20s'))+
+geom_line(data = df, aes(x = date, y = a30s, color = '30s'))+
+geom_line(data = df, aes(x = date, y = a40s, color = '40s'))+
+geom_line(data = df, aes(x = date, y = a50s, color = '50s'))+
+geom_line(data = df, aes(x = date, y = a60s, color = '60s'))+
+geom_line(data = df, aes(x = date, y = a70s, color = '70s'))+
+geom_line(data = df, aes(x = date, y = a70s, color = '70s'))+
+
+ylab('')
+```
+
 
 
 split the rows of TimeProvince
@@ -102,6 +221,10 @@ pro_df = data.frame(province_df$Busan.date, temp)
 colnames(pro_df)[1] = 'date'
 #convert datetime
 pro_df[,1] = anytime::anydate(pro_df[,1])
+#non cumulation
+pro_noncum_df = data.frame(pro_df$date[-1], apply(pro_df[,-1], 2, diff))
+colnames(pro_noncum_df) = c('date', 'Busan', 'Chungcheongbuk', 'Chungcheongnam', 'Daegu', 'Daejeon', 'Gangwon','Gwangju', 'Gyeonggi', 'Gyeongsangbuk', 'Gyeongsangnam', 'Incheon', 'Jeju', 'Jeollabuk', 'Jeollanam', 'Sejong', 'Seoul', 'Ulsan')
+
 ```
 
 standardize it by min-max scales
@@ -132,7 +255,7 @@ colnames(pro_stand_df)[1] = 'date'
 
 plot TimeProvince
 ```{r, fig.width = 8, fig.height = 8}
-df = pro_stand_df
+df = pro_noncum_df
 ggplot() + 
 geom_line(data = df, aes(x = date, y = Busan, color = 'Busan')) + 
 geom_line(data = df, aes(x = date, y = Chungcheongbuk, color = 'Chungcheongbuk'))+ 
@@ -189,3 +312,17 @@ corr_pro = cor(pro_df[,2:ncol(pro_df)])
 ```
 
 train model? search for models
+First use the non-time series model
+data cleaning
+
+call the data frame back
+remove policy
+```{r}
+time_non_cumu
+time_death_non_cumu
+case_policy_search
+timegen_death_noncumu_df
+timegen_confirm_noncumu_df
+pro_noncum_df
+```
+
