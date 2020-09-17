@@ -358,9 +358,10 @@ summary(lin_reg)
 
 split the model into training and testing data
 ```{r}
-ind <- nrow(df)
-train <- df[1:as.integer((ind*0.7)), ]
-test <- df[as.integer((ind*0.7+1)):(nrow(df)-1), ]
+set.seed(4011)
+ind <- sample(seq_len(nrow(df)), size = nrow(df)*0.7)
+train <- df[ind, ]
+test <- df[-ind, ]
 ```
 
 
