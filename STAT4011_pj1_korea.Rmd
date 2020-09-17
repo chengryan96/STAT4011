@@ -12,6 +12,7 @@ policy, searchtrend, TimeProvince
 load the required library
 ```{r}
 library(ggplot2)
+library(Metrics)
 ```
 
 set seed and read data
@@ -65,6 +66,18 @@ geom_line(data = df, aes(x = date, y = coronavirus, color = 'ppl search for coro
 ggplot() +
 geom_line(data = df, aes(x = date, y = flu, color = 'ppl search for flu'))
 ```
+realize policy is not a good indicator
+create a new df without policy
+```{r}
+case_search_df = merge(case, search_trend, by.x='date', by.y='date')
+# non cumulative
+case_search_df$confirmed = c(0, diff(case_search_df$confirmed))
+case_search_df$test = c(0, diff(case_search_df$test))
+case_search_df$deceased = c(0, diff(case_search_df$deceased))
+case_search_df$negative = c(0, diff(case_search_df$negative))
+case_search_df$released = c(0, diff(case_search_df$released))
+```
+
 correlation 
 ```{r}
 corr_df = as.data.frame(cbind(df$confirmed, df$coronavirus, df$flu, df$policy_id))
@@ -89,12 +102,12 @@ timeage_df = timeage[,c(-2,-5)]
 timeage_df$date = as.Date(timeage_df$date)
 timeage_df = as.data.frame(split(timeage_df, timeage_df$age))
 timeage_df = data.frame(timeage_df$X0s.date, timeage_df$X0s.confirmed, timeage_df$X10s.confirmed, timeage_df$X20s.confirmed, timeage_df$X30s.confirmed, timeage_df$X40s.confirmed, timeage_df$X50s.confirmed, timeage_df$X60s.confirmed, timeage_df$X70s.confirmed, timeage_df$X80s.confirmed)
-colnames(timeage_df) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+colnames(timeage_df) = c('date', 'confirmed_0s', 'confirmed_10s', 'confirmed_20s', 'confirmed_30s', 'confirmed_40s', 'confirmed_50s', 'confirmed_60s', 'confirmed_70s', 'confirmed_80s')
 rownames(timeage_df) = timeage_df$date
 age_confirm_corr = cor(timeage_df[,-1])
 #non cumulation
 time_non_cumu = data.frame(timeage_df$date[-1], apply(timeage_df[,-1], 2, diff))
-colnames(time_non_cumu) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+colnames(time_non_cumu) = c('date', 'confirmed_0s', 'confirmed_10s', 'confirmed_20s', 'confirmed_30s', 'confirmed_40s', 'confirmed_50s', 'confirmed_60s', 'confirmed_70s', 'confirmed_80s')
 ```
 
 time age death
@@ -104,11 +117,11 @@ timeage_death_df = timeage
 timeage_death_df = as.data.frame(split(timeage_death_df, timeage_death_df$age))
 
 timeage_death_df = data.frame(timeage_death_df$X0s.date, timeage_death_df$X0s.deceased, timeage_death_df$X10s.deceased, timeage_death_df$X20s.deceased, timeage_death_df$X30s.deceased, timeage_death_df$X40s.deceased, timeage_death_df$X50s.deceased, timeage_death_df$X60s.deceased, timeage_death_df$X70s.deceased, timeage_death_df$X80s.deceased)
-colnames(timeage_death_df) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+colnames(timeage_death_df) = c('date', 'death_0s', 'death_10s', 'death_20s', 'death_30s', 'death_40s', 'death_50s', 'death_60s', 'death_70s', 'death_80s')
 timeage_death_df$date = as.Date(timeage_death_df$date)
 #non cumu
 time_death_non_cumu = data.frame(timeage_death_df$date[-1], apply(timeage_death_df[,-1], 2, diff))
-colnames(time_death_non_cumu) = c('date', 'a0s', 'a10s', 'a20s', 'a30s', 'a40s', 'a50s', 'a60s', 'a70s', 'a80s')
+colnames(time_death_non_cumu) = c('date', 'death_0s', 'death_10s', 'death_20s', 'death_30s', 'death_40s', 'death_50s', 'death_60s', 'death_70s', 'death_80s')
 ```
 
 time gen
@@ -119,7 +132,7 @@ colnames(timegen_confirm_df) = c('date', 'female', 'male')
 timegen_confirm_df$date = as.Date(timegen_confirm_df$date)
 #non cumu
 timegen_confirm_noncumu_df = data.frame(timegen_confirm_df$date[-1], apply(timegen_confirm_df[,-1], 2, diff))
-colnames(timegen_confirm_noncumu_df) = c('date', 'female', 'male')
+colnames(timegen_confirm_noncumu_df) = c('date', 'confirmed_female', 'confirmed_male')
 ```
 
 time gen death
@@ -130,7 +143,7 @@ colnames(timegen_death_df) = c('date', 'female', 'male')
 timegen_death_df$date = as.Date(timegen_death_df$date)
 #non cumu
 timegen_death_noncumu_df = data.frame(timegen_death_df$date[-1], apply(timegen_death_df[,-1], 2, diff))
-colnames(timegen_death_noncumu_df) = c('date', 'female', 'male')
+colnames(timegen_death_noncumu_df) = c('date', 'death_female', 'death_male')
 ```
 
 plot time gen
@@ -316,13 +329,45 @@ First use the non-time series model
 data cleaning
 
 call the data frame back
-remove policy
 ```{r}
 time_non_cumu
 time_death_non_cumu
-case_policy_search
+case_search_df$date = as.Date(case_search_df$date)
 timegen_death_noncumu_df
 timegen_confirm_noncumu_df
 pro_noncum_df
+```
+
+merge df
+```{r}
+df = merge(time_non_cumu, time_death_non_cumu, by = 'date')
+df = merge(df, timegen_death_noncumu_df, by = 'date')
+df = merge(df, timegen_confirm_noncumu_df, by = 'date')
+df = merge(df, case_search_df, by = 'date')
+df = df[,-24]
+
+df$tmr_confirmed = data.table::shift(df$confirmed, n = -1)
+```
+
+corr and whole model
+```{r}
+corr = cor(df[,-1])
+lin_reg = lm(tmr_confirmed ~ ., data = df)
+summary(lin_reg)
+```
+
+split the model into training and testing data
+```{r}
+ind <- nrow(df)
+train <- df[1:as.integer((ind*0.7)), ]
+test <- df[as.integer((ind*0.7+1)):(nrow(df)-1), ]
+```
+
+
+```{r}
+lin_reg = lm(tmr_confirmed ~ ., data = train)
+summary(lin_reg)
+predicted = predict(lin_reg, test)
+result = rmse(test$tmr_confirmed, as.numeric(predicted))
 ```
 
