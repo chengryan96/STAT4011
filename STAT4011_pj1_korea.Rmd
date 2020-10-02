@@ -14,6 +14,8 @@ load the required library
 library(ggplot2)
 library(Metrics)
 library(randomForest)
+library(plot.matrix)
+library(psych)
 ```
 
 set seed and read data
@@ -30,7 +32,7 @@ timegen = read.csv(paste0(file_path, '/TimeGender.csv'), stringsAsFactors = FALS
 ```
 
 
-merge and plot for csae, policy and search trend
+merge and plot for case, policy and search trend
 ```{r, fig.width = 8, fig.height = 5}
 case_policy_df = merge(case, policy, by.x='date', by.y='start_date', all = TRUE)[-1,]
 case_policy_search = merge(case_policy_df, search_trend, by.x='date', by.y='date')
@@ -46,27 +48,47 @@ for (i in 1:nrow(df)){
   if(df$policy_id[i] > 0) {
     df$policy_id[i] = 1
   } else {
-    df$policy_id[i] = 0
+    df$policy_id[i] = NA
   }
 }
 #plot the graph
 ggplot() + 
+ggtitle("confirmed case against government applied policy")+
 geom_line(data = df, aes(x = date, y = confirmed, color = 'confirmed')) + 
-geom_line(data = df, aes(x = date, y = deceased, color = 'deceased'))+
+#geom_line(data = df, aes(x = date, y = deceased, color = 'deceased'))+
 #geom_line(data = df, aes(x = date, y = test, color = 'test'))+
 geom_point(data = df, aes(x = date, y = policy_id, color = 'government applied policy'), size = 0.01) +
 ylab('')
 
-ggplot() +
+#ggplot() +
 geom_line(data = df, aes(x = date, y = deceased, color = 'deceased'))
 # plot search trend
 
-ggplot() +
+#ggplot() +
 geom_line(data = df, aes(x = date, y = coronavirus, color = 'ppl search for coronavirus'))
 
 ggplot() +
 geom_line(data = df, aes(x = date, y = flu, color = 'ppl search for flu'))
 ```
+plot a new graph contains of scaled graph and search trend
+```{r}
+normalize <- function(x)
+{
+    return((x- mean(x)) /sd(x))
+}
+norm_case = normalize(df$confirmed)
+norm_cov19 = normalize(df$coronavirus)
+ggplot() +
+ggtitle("confirmed case against keyword searched (scaled)")+
+geom_line(data = df, aes(x = date, y = norm_case, color = 'confirmed case'))+
+geom_line(data = df, aes(x = date, y = norm_cov19, color = 'ppl search for coronavirus'))+
+labs(y='')
+#geom_line(data = df, aes(x = date, y = cold, color = 'ppl search for cold'))+
+#geom_line(data = df, aes(x = date, y = pneumonia, color = 'ppl search for pneumonia'))+
+#geom_line(data = df, aes(x = date, y = flu, color = 'ppl search for flu'))
+
+```
+
 realize policy is not a good indicator
 create a new df without policy
 ```{r}
@@ -77,13 +99,18 @@ case_search_df$test = c(0, diff(case_search_df$test))
 case_search_df$deceased = c(0, diff(case_search_df$deceased))
 case_search_df$negative = c(0, diff(case_search_df$negative))
 case_search_df$released = c(0, diff(case_search_df$released))
+
 ```
 
 correlation 
 ```{r}
-corr_df = as.data.frame(cbind(df$confirmed, df$coronavirus, df$flu, df$policy_id))
-colnames(corr_df) = c('confirmed', 'keyword_covid19', 'keyword_flu', 'gov_policy')
+corr_df = as.data.frame(cbind(df$confirmed, df$coronavirus, df$cold, df$pneumonia, df$flu, df$policy_id))
+colnames(corr_df) = c('confirmed', 'keyword_covid19', 'keyword_cold','keyword_pneumonia','keyword_flu', 'gov_policy')
 corr = cor(corr_df)
+#plot the matrix
+par(mar=c(5.1, 4.1, 4.1, 4.1)) # adapt margins
+plot(corr, digits=4, cex=1, col=topo.colors)
+
 ```
 
 do a linear regression and see how they weighted
@@ -152,26 +179,27 @@ plot time gen
 df = timegen_death_noncumu_df
 ggplot() + 
 geom_line(data = df, aes(x = date, y = death_female, color = 'female')) + 
-geom_line(data = df, aes(x = date, y = death_female, color = 'male'))+
+geom_line(data = df, aes(x = date, y = death_male, color = 'male'))+
 ylab('')
 ```
 
 
 plot the graph
 ```{r}
-# df = time_non_cumu
-# ggplot() + 
-# geom_line(data = df, aes(x = date, y = a0s, color = '0s')) + 
-# geom_line(data = df, aes(x = date, y = a10s, color = '10s'))+ 
-# geom_line(data = df, aes(x = date, y = a20s, color = '20s'))+
-# geom_line(data = df, aes(x = date, y = a30s, color = '30s'))+
-# geom_line(data = df, aes(x = date, y = a40s, color = '40s'))+
-# geom_line(data = df, aes(x = date, y = a50s, color = '50s'))+
-# geom_line(data = df, aes(x = date, y = a60s, color = '60s'))+
-# geom_line(data = df, aes(x = date, y = a70s, color = '70s'))+
-# geom_line(data = df, aes(x = date, y = a70s, color = '80s'))+
-# 
-# ylab('')
+df = time_non_cumu
+ggplot() +
+geom_line(data = df, aes(x = date, y = confirmed_0s, color = '0s')) +
+geom_line(data = df, aes(x = date, y = confirmed_10s, color = '10s'))+
+geom_line(data = df, aes(x = date, y = confirmed_20s, color = '20s'))+
+geom_line(data = df, aes(x = date, y = confirmed_30s, color = '30s'))+
+geom_line(data = df, aes(x = date, y = confirmed_40s, color = '40s'))+
+geom_line(data = df, aes(x = date, y = confirmed_50s, color = '50s'))+
+geom_line(data = df, aes(x = date, y = confirmed_60s, color = '60s'))+
+geom_line(data = df, aes(x = date, y = confirmed_70s, color = '70s'))+
+geom_line(data = df, aes(x = date, y = confirmed_80s, color = '80s'))+
+
+ylab('')+
+ggtitle('confirmed cases against each age group')
 ```
 
 scale it to see if there is any difference
@@ -368,6 +396,11 @@ train <- df[ind, ]
 test <- df[-ind, ]
 train = na.omit(train)
 test = na.omit(test)
+
+train_y = train$tmr_confirmed
+train_x = train[,-ncol(train)]
+test_y = test$tmr_confirmed
+test_x = test[,-ncol(test)]
 ```
 
 
@@ -391,10 +424,23 @@ result
 
 random forest
 ```{r}
-result = list()
 rf_classifier = randomForest(tmr_confirmed ~ ., data = train, ntree=500, mtry=10, importance=TRUE)
+#plot the model
+plot(rf_classifier)
+
 predicted = predict(rf_classifier, test)
 result = rmse(test$tmr_confirmed, as.numeric(predicted))
 result
+
+#tune params
+#as we know, it converges when number of trees > 100
+#we only tune mtry
+rf_1 = tuneRF(x = train_x, y = train_y, mtryStart = 5, ntreeTry = 500 ,stepFactor = 1.5, improve = 0.01, trace = FALSE)
+#use the new params
+rf_classifier = randomForest(tmr_confirmed ~ ., data = train, ntree=500, mtry=5, importance=TRUE)
+predicted = predict(rf_classifier, test)
+result = rmse(test$tmr_confirmed, as.numeric(predicted))
+result
+#we can see there is a slight increase in our model
 ```
 
