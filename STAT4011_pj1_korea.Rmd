@@ -14,8 +14,9 @@ load the required library
 library(ggplot2)
 library(Metrics)
 library(randomForest)
-library(plot.matrix)
-library(psych)
+#library(plot.matrix)
+#library(psych)
+library(forecast)
 ```
 
 set seed and read data
@@ -29,6 +30,25 @@ province = read.csv(paste0(file_path, '/TimeProvince.csv'), stringsAsFactors = F
 weather = read.csv(paste0(file_path, '/Weather.csv'), stringsAsFactors = FALSE)
 timeage = read.csv(paste0(file_path, '/Timeage.csv'), stringsAsFactors = FALSE, row.names=NULL)
 timegen = read.csv(paste0(file_path, '/TimeGender.csv'), stringsAsFactors = FALSE, row.names=NULL)
+```
+
+arima
+```{r, fig.width = 8, fig.height = 5}
+confirm_ts = as.ts(case$confirmed)
+plot(confirm_ts)
+#prove it is a non-seasonal data
+#decompose(confirm_ts)
+#auto.arima
+auto.arima(confirm_ts)
+par(mar=c(5.1, 4.1, 4.1, 4.1)) # adapt margins
+acf(confirm_ts, lag.max = 100)
+pacf(confirm_ts, lag.max = 60)
+#fit arima
+ts_md = arima(confirm_ts, order(c(1,0,0)))
+# test
+test  = Box.test(ts_md$residuals, lag = 1, type = c("Box-Pierce", "Ljung-Box"), fitdf = 0)
+
+
 ```
 
 
@@ -118,10 +138,10 @@ do a linear regression and see how they weighted
 lin_reg_keywords = lm(confirmed ~ ., data = corr_df)
 summary(lin_reg_keywords)
 vip::vip(lin_reg_keywords)
-step(lin_reg_keywords)
-new_keywords_linreg = lm(formula = confirmed ~ keyword_covid19 + keyword_flu, data = corr_df)
-summary(new_keywords_linreg)
-vip::vip(new_keywords_linreg)
+# #step(lin_reg_keywords)
+# new_keywords_linreg = lm(formula = confirmed ~ keyword_covid19 + keyword_flu, data = corr_df)
+# summary(new_keywords_linreg)
+# vip::vip(new_keywords_linreg)
 ```
 
 correlation between time and age
@@ -133,9 +153,17 @@ timeage_df = data.frame(timeage_df$X0s.date, timeage_df$X0s.confirmed, timeage_d
 colnames(timeage_df) = c('date', 'confirmed_0s', 'confirmed_10s', 'confirmed_20s', 'confirmed_30s', 'confirmed_40s', 'confirmed_50s', 'confirmed_60s', 'confirmed_70s', 'confirmed_80s')
 rownames(timeage_df) = timeage_df$date
 age_confirm_corr = cor(timeage_df[,-1])
+#plot the graph
 #non cumulation
 time_non_cumu = data.frame(timeage_df$date[-1], apply(timeage_df[,-1], 2, diff))
 colnames(time_non_cumu) = c('date', 'confirmed_0s', 'confirmed_10s', 'confirmed_20s', 'confirmed_30s', 'confirmed_40s', 'confirmed_50s', 'confirmed_60s', 'confirmed_70s', 'confirmed_80s')
+```
+
+plot the corr
+```{r}
+#plot the matrix
+par(mar=c(5.1, 4.1, 4.1, 4.1)) # adapt margins
+plot(age_confirm_corr, digits=4, cex=0.6, col=topo.colors)
 ```
 
 time age death
@@ -180,26 +208,28 @@ df = timegen_death_noncumu_df
 ggplot() + 
 geom_line(data = df, aes(x = date, y = death_female, color = 'female')) + 
 geom_line(data = df, aes(x = date, y = death_male, color = 'male'))+
+ggtitle('death cases against gender')+
 ylab('')
 ```
 
 
 plot the graph
 ```{r}
-df = time_non_cumu
+df = time_death_non_cumu
 ggplot() +
-geom_line(data = df, aes(x = date, y = confirmed_0s, color = '0s')) +
-geom_line(data = df, aes(x = date, y = confirmed_10s, color = '10s'))+
-geom_line(data = df, aes(x = date, y = confirmed_20s, color = '20s'))+
-geom_line(data = df, aes(x = date, y = confirmed_30s, color = '30s'))+
-geom_line(data = df, aes(x = date, y = confirmed_40s, color = '40s'))+
-geom_line(data = df, aes(x = date, y = confirmed_50s, color = '50s'))+
-geom_line(data = df, aes(x = date, y = confirmed_60s, color = '60s'))+
-geom_line(data = df, aes(x = date, y = confirmed_70s, color = '70s'))+
-geom_line(data = df, aes(x = date, y = confirmed_80s, color = '80s'))+
+  
+# geom_line(data = df, aes(x = date, y = death_0s, color = '0s')) +
+# geom_line(data = df, aes(x = date, y = death_10s, color = '10s'))+
+# geom_line(data = df, aes(x = date, y = death_20s, color = '20s'))+
+# geom_line(data = df, aes(x = date, y = death_30s, color = '30s'))+
+# geom_line(data = df, aes(x = date, y = death_40s, color = '40s'))+
+geom_line(data = df, aes(x = date, y = death_50s, color = '50s'))+
+geom_line(data = df, aes(x = date, y = death_60s, color = '60s'))+
+geom_line(data = df, aes(x = date, y = death_70s, color = '70s'))+
+geom_line(data = df, aes(x = date, y = death_80s, color = '80s'))+
 
 ylab('')+
-ggtitle('confirmed cases against each age group')
+ggtitle('death cases against each age group (50, 60, 70, 80)')
 ```
 
 scale it to see if there is any difference
@@ -215,19 +245,19 @@ colnames(timeage_stand_df)[1] = 'date'
 ```
 
 ```{r}
-# df = timeage_stand_df
-# ggplot() + 
-# geom_line(data = df, aes(x = date, y = a0s, color = '0s')) + 
-# geom_line(data = df, aes(x = date, y = a10s, color = '10s'))+ 
-# geom_line(data = df, aes(x = date, y = a20s, color = '20s'))+
-# geom_line(data = df, aes(x = date, y = a30s, color = '30s'))+
-# geom_line(data = df, aes(x = date, y = a40s, color = '40s'))+
-# geom_line(data = df, aes(x = date, y = a50s, color = '50s'))+
-# geom_line(data = df, aes(x = date, y = a60s, color = '60s'))+
-# geom_line(data = df, aes(x = date, y = a70s, color = '70s'))+
-# geom_line(data = df, aes(x = date, y = a70s, color = '70s'))+
-# 
-# ylab('')
+df = timeage_stand_df
+ggplot() +
+geom_line(data = df, aes(x = date, y = confirmed_0s, color = '0s')) +
+geom_line(data = df, aes(x = date, y = confirmed_10s, color = '10s'))+
+geom_line(data = df, aes(x = date, y = confirmed_20s, color = '20s'))+
+geom_line(data = df, aes(x = date, y = confirmed_30s, color = '30s'))+
+geom_line(data = df, aes(x = date, y = confirmed_40s, color = '40s'))+
+geom_line(data = df, aes(x = date, y = confirmed_50s, color = '50s'))+
+geom_line(data = df, aes(x = date, y = confirmed_60s, color = '60s'))+
+geom_line(data = df, aes(x = date, y = confirmed_70s, color = '70s'))+
+geom_line(data = df, aes(x = date, y = confirmed_80s, color = '80s'))+
+
+ylab('')
 ```
 
 
@@ -297,7 +327,7 @@ colnames(pro_stand_df)[1] = 'date'
 
 plot TimeProvince
 ```{r, fig.width = 8, fig.height = 8}
-df = pro_noncum_df
+df = pro_stand_df
 ggplot() + 
 geom_line(data = df, aes(x = date, y = Busan, color = 'Busan')) + 
 geom_line(data = df, aes(x = date, y = Chungcheongbuk, color = 'Chungcheongbuk'))+ 
@@ -316,7 +346,7 @@ geom_line(data = df, aes(x = date, y = Jeollanam, color = 'Jeollanam'))+
 geom_line(data = df, aes(x = date, y = Sejong, color = 'Sejong'))+
 geom_line(data = df, aes(x = date, y = Seoul, color = 'Seoul'))+
 geom_line(data = df, aes(x = date, y = Ulsan, color = 'Jeollabuk'))+
-
+ggtitle("cumulative confirmed case within each province")
 ylab('')
 ```
 
@@ -328,7 +358,9 @@ ggplot() +
 geom_line(data = df, aes(x = date, y = Seoul, color = 'Seoul'))+
 geom_line(data = df, aes(x = date, y = Daegu, color = 'Daegu'))+
 geom_line(data = df, aes(x = date, y = Gyeonggi, color = 'Gyeonggi'))+
-geom_line(data = df, aes(x = date, y = Gyeongsangbuk, color = 'Gyeongsangbuk'))  
+geom_line(data = df, aes(x = date, y = Gyeongsangbuk, color = 'Gyeongsangbuk'))+
+  ggtitle('cumulative confirmed case within the 4 most severe province')+
+  ylab('')
 ```
 
 ```{r}
@@ -337,7 +369,9 @@ ggplot() +
 geom_line(data = df, aes(x = date, y = Seoul, color = 'Seoul'))+
 geom_line(data = df, aes(x = date, y = Daegu, color = 'Daegu'))+
 geom_line(data = df, aes(x = date, y = Gyeonggi, color = 'Gyeonggi'))+
-geom_line(data = df, aes(x = date, y = Gyeongsangbuk, color = 'Gyeongsangbuk'))
+geom_line(data = df, aes(x = date, y = Gyeongsangbuk, color = 'Gyeongsangbuk'))+
+    ggtitle('cumulative confirmed case within the 4 most severe province (scaled)')+
+  ylab('')
 ```
 correlation of only this 4 country
 ```{r}
@@ -351,6 +385,9 @@ find the correlation of the interesting factor
 ```{r}
 
 corr_pro = cor(pro_df[,2:ncol(pro_df)])
+#plot the matrix
+par(mar=c(5.1, 4.1, 4.1, 4.1)) # adapt margins
+plot(corr_pro, digits=4, cex=0.5, col=topo.colors)
 ```
 
 train model? search for models
@@ -387,8 +424,10 @@ summary(lin_reg)
 
 split the model into training and testing data
 ```{r}
+date = df$date
 set.seed(4011)
-ind <- sample(seq_len(nrow(df)), size = nrow(df)*0.7)
+ind = 1:as.integer(nrow(df)*0.7)
+#ind <- sample(seq_len(nrow(df)), size = nrow(df)*0.7)
 rownames(df) = df$date
 df = df[-nrow(df),-1]
 
@@ -401,6 +440,8 @@ train_y = train$tmr_confirmed
 train_x = train[,-ncol(train)]
 test_y = test$tmr_confirmed
 test_x = test[,-ncol(test)]
+train_date = date[ind]
+test_date = date[-ind]
 ```
 
 
@@ -437,10 +478,21 @@ result
 #we only tune mtry
 rf_1 = tuneRF(x = train_x, y = train_y, mtryStart = 5, ntreeTry = 500 ,stepFactor = 1.5, improve = 0.01, trace = FALSE)
 #use the new params
-rf_classifier = randomForest(tmr_confirmed ~ ., data = train, ntree=500, mtry=5, importance=TRUE)
+rf_classifier = randomForest(tmr_confirmed ~ ., data = train, ntree=500, mtry=7, importance=TRUE)
 predicted = predict(rf_classifier, test)
 result = rmse(test$tmr_confirmed, as.numeric(predicted))
 result
 #we can see there is a slight increase in our model
+#plot the result
+test_date = cbind(test, predicted, rownames(test))
+colnames(test_date)[ncol(test_date)] = 'date'
+test_date$date = as.Date(test_date$date)
+
+ggplot() + 
+geom_line(data = test_date, aes(x = date,y= tmr_confirmed
+, color = 'confirmed case')) + 
+geom_line(data = test_date, aes(x = date, y = predicted, color = 'prediction result'))+
+  ylab('')+
+  ggtitle("true reuslt compare to predicted resuly (random forest)")
 ```
 
