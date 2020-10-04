@@ -17,6 +17,7 @@ library(randomForest)
 #library(plot.matrix)
 #library(psych)
 library(forecast)
+library(xgboost)
 ```
 
 set seed and read data
@@ -494,5 +495,62 @@ geom_line(data = test_date, aes(x = date,y= tmr_confirmed
 geom_line(data = test_date, aes(x = date, y = predicted, color = 'prediction result'))+
   ylab('')+
   ggtitle("true reuslt compare to predicted resuly (random forest)")
+```
+
+```{r}
+set.seed(4011)
+
+
+dtrain <- xgb.DMatrix(data = as.matrix(train_x), label=as.matrix(train_y))
+dtest <- xgb.DMatrix(data = as.matrix(test_x), label=as.matrix(test_y))
+
+
+xgb.fit1 <- xgb.cv(
+data = dtrain,
+nrounds = 1000,
+nfold = 5,
+objective = "reg:linear",  # for regression models
+verbose = 0,
+early_stopping_rounds = 10# silent
+)
+
+print(xgb.fit1,verbose = TRUE)
+xgb.fit1$evaluation_log
+
+xgb.fit1$evaluation_log %>%
+  dplyr::summarise(
+    ntrees.train = which(train_rmse_mean == min(train_rmse_mean))[1],
+    rmse.train   = min(train_rmse_mean),
+    ntrees.test  = which(test_rmse_mean == min(test_rmse_mean))[1],
+    rmse.test   = min(test_rmse_mean)
+  )
+
+ggplot(xgb.fit1$evaluation_log) +
+  geom_line(aes(iter, train_rmse_mean), color = "red") +
+  geom_line(aes(iter, test_rmse_mean), color = "blue")
+```
+
+
+```{r}
+params <- list(
+  eta = 0.01,
+  max_depth = 20,
+  min_child_weight = 5,
+  subsample = 0.65,
+  colsample_bytree = 1
+)
+
+xgb.fit.final <- xgboost(
+  params = params,
+  data = as.matrix(train_x),
+  label = train_y,
+  nrounds = 20,
+  objective = "reg:linear",
+  verbose = 0
+)
+
+
+predicted = predict(xgb.fit.final, dtest)
+result = rmse(test$tmr_confirmed, as.numeric(predicted))
 ```
 
