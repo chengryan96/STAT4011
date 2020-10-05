@@ -479,9 +479,9 @@ result
 #we only tune mtry
 rf_1 = tuneRF(x = train_x, y = train_y, mtryStart = 5, ntreeTry = 500 ,stepFactor = 1.5, improve = 0.01, trace = FALSE)
 #use the new params
-rf_classifier = randomForest(tmr_confirmed ~ ., data = train, ntree=500, mtry=7, importance=TRUE)
+rf_classifier = randomForest(tmr_confirmed ~ ., data = train, ntree=500, mtry=5, importance=TRUE)
 predicted = predict(rf_classifier, test)
-result = rmse(test$tmr_confirmed, as.numeric(predicted))
+result = rmse(test$tmr_confirmed, as.numeric(as.integer(predicted)))
 result
 #we can see there is a slight increase in our model
 #plot the result
@@ -495,8 +495,11 @@ geom_line(data = test_date, aes(x = date,y= tmr_confirmed
 geom_line(data = test_date, aes(x = date, y = predicted, color = 'prediction result'))+
   ylab('')+
   ggtitle("true reuslt compare to predicted resuly (random forest)")
+#vip
+vip::vip()
 ```
 
+xgboost
 ```{r}
 set.seed(4011)
 
@@ -510,8 +513,8 @@ data = dtrain,
 nrounds = 1000,
 nfold = 5,
 objective = "reg:linear",  # for regression models
-verbose = 0,
-early_stopping_rounds = 10# silent
+verbose = 0
+#early_stopping_rounds = 10# silent
 )
 
 print(xgb.fit1,verbose = TRUE)
@@ -530,14 +533,124 @@ ggplot(xgb.fit1$evaluation_log) +
   geom_line(aes(iter, test_rmse_mean), color = "blue")
 ```
 
+add some features
+```{r}
+set.seed(4011)
+
+xgb.fit2 <- xgb.cv(
+data = dtrain,
+nrounds = 1000,
+nfold = 5,
+objective = "reg:linear",  # for regression models
+verbose = 0,
+early_stopping_rounds = 10,
+gamma = 100
+)
+
+ggplot(xgb.fit2$evaluation_log) +
+  geom_line(aes(iter, train_rmse_mean), color = "red") +
+  geom_line(aes(iter, test_rmse_mean), color = "blue")
+```
+
+tune the params
+```{r}
+  params <- list(
+    eta = .1,
+    max_depth = 5,
+    min_child_weight = 2,
+    subsample = .8,
+    colsample_bytree = .9
+  )
+
+set.seed(4011)
+system.time(
+xgb.fit3 <- xgb.cv(
+  params = params,
+  data = dtrain,
+  nrounds = 1000,
+  nfold = 5,
+  objective = "reg:squarederror",  # for regression models
+  verbose = T,               # silent,
+  early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
+)
+)
+
+
+
+# assess results
+xgb.fit3$evaluation_log %>%
+  dplyr::summarise(
+    ntrees.train = which(train_rmse_mean == min(train_rmse_mean))[1],
+    rmse.train   = min(train_rmse_mean),
+    ntrees.test  = which(test_rmse_mean == min(test_rmse_mean))[1],
+    rmse.test   = min(test_rmse_mean)
+  )
+```
+perform grid search
+```{r}
+# create hyperparameter grid
+hyper_grid <- expand.grid(
+  eta = c(.01, .05, .1, .3),
+  max_depth = c(1, 3, 5, 7),
+  min_child_weight = c(1, 3, 5, 7),
+  subsample = c(.65, .8, 1), 
+  colsample_bytree = c(.8, .9, 1),
+  optimal_trees = 0,               # a place to dump results
+  min_RMSE = 0 ,                    # a place to dump results
+  gamma = c(0, 5, 10, 15, 20)
+)
+ 
+nrow(hyper_grid)
+```
+
+```{r}
+for(i in 1:nrow(hyper_grid)) {
+ 
+  # create parameter list
+  params <- list(
+    eta = hyper_grid$eta[i],
+    max_depth = hyper_grid$max_depth[i],
+    min_child_weight = hyper_grid$min_child_weight[i],
+    subsample = hyper_grid$subsample[i],
+    colsample_bytree = hyper_grid$colsample_bytree[i]
+  )
+ 
+  # reproducibility
+  set.seed(4011)
+ 
+  # train model
+  xgb.tune <- xgb.cv(
+    params = params,
+    data = dtrain,
+    nrounds = 5000,
+    nfold = 5,
+    objective = "reg:squarederror",  # for regression models
+    verbose = 0,               # silent,
+    early_stopping_rounds = 10, # stop if no improvement for 10 consecutive trees
+  )
+ 
+  # add min training error and trees to grid
+  hyper_grid$optimal_trees[i] <- which.min(xgb.tune$evaluation_log$test_rmse_mean)
+  hyper_grid$min_RMSE[i] <- min(xgb.tune$evaluation_log$test_rmse_mean)
+  print(paste('optimal trees:', hyper_grid$optimal_trees[i]))
+  print(paste('min RMSE:', hyper_grid$min_RMSE[i]))
+  print('----------------------')
+}
+ 
+hyper_grid %>%
+  dplyr::arrange(min_RMSE) %>%
+  head(10)
+```
+
 
 ```{r}
 params <- list(
-  eta = 0.01,
-  max_depth = 20,
-  min_child_weight = 5,
-  subsample = 0.65,
-  colsample_bytree = 1
+  eta = 0.3,
+  max_depth = 5,
+  min_child_weight = 1,
+  subsample = 0.8,
+  colsample_bytree = 0.9,
+  optimal_trees = 13
 )
 
 xgb.fit.final <- xgboost(
@@ -552,5 +665,20 @@ xgb.fit.final <- xgboost(
 
 predicted = predict(xgb.fit.final, dtest)
 result = rmse(test$tmr_confirmed, as.numeric(predicted))
+
+test_date = cbind(test, predicted, rownames(test))
+colnames(test_date)[ncol(test_date)] = 'date'
+test_date$date = as.Date(test_date$date)
+
+
+ggplot() + 
+geom_line(data = test_date, aes(x = date,y= tmr_confirmed
+, color = 'confirmed case')) + 
+geom_line(data = test_date, aes(x = date, y = predicted, color = 'prediction result'))+
+  ylab('')+
+  ggtitle("true reuslt compare to predicted result (XGboost)")
+#plot vip
+importance_matrix <- xgb.importance(model = xgb.fit.final)
+xgb.plot.importance(importance_matrix, top_n = 10, measure = "Gain")
 ```
 
