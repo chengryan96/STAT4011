@@ -1,0 +1,657 @@
+---
+title: "4011 CHENG_WING_RYAN"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+collaboration
+
+You Xinyu 1155110904
+
+Part 1
+
+```{r}
+work_dir = 'C:\\Users\\cheng\\OneDrive\\Desktop\\hw\\STAT4011\\pj2\\data\\'
+house <- data.frame(read.csv(paste0(work_dir,'House.csv')))
+```
+
+install required package
+```{r, warning=FALSE, results='hide',message=FALSE}
+library(caret)
+library(rpart)
+library(mgcv)
+library(MASS)
+library(tree)
+library(glmnet)
+library(tidyverse)
+library(leaps)
+library(ISLR)
+library(boot)
+```
+
+
+Data cleaning
+
+It is always good to look at the structure of the data and the relationship between different variables. However, before doing taking any closer look, it is better to fill in the missing values. Fortunately, although some values are missed, it is not in a large scale. Thus, we can fill it in easily.
+
+There are several ways to fill in the missing data, such as fill in the missing value by simply substituting the mean of the columns. Let us figure out which columns includes missing value, then we can fill it in one by one. After observation, columns “LotFrontage” includes the 87 missing values.
+
+From the qqplot we can know that the data are not following normal distribution, but still we can observe the distribution of the data. 
+
+We then try to fill in the missing data by the mean, below shows the qqplots before and after filling the missing value by the mean of LotFrontage”. 
+
+```{r, fig.height=3, fig.width=5}
+house[is.na(house$MasVnrArea), 6] = 0
+NAhouse <- house[is.na(house$LotFrontage), -1]
+subhouse <- house[!is.na(house$LotFrontage), -1]
+#fit it with the mean
+NAhouse$LotFrontage = mean(subhouse$LotFrontage)
+#check the distribution of this method
+new_house = rbind(NAhouse, subhouse)
+
+qqnorm(subhouse$LotFrontage, main = 'Normal Q-Q Plot before filling the missing value')
+qqline(subhouse$LotFrontage, col = "steelblue", lwd = 2)
+qqnorm(new_house$LotFrontage, main = 'Normal Q-Q Plot after filling the missing value')
+qqline(subhouse$LotFrontage, col = "steelblue", lwd = 2)
+```
+
+As we can see, there is a slightly flat-out effect on the qqplot. Although this method are not doing bad, we will still try another method and see if it provides us a even more better result. 
+
+When dealing with missing value, sometimes it is good to use a simple learning algorithm when we lack understanding of the data, whilst k-nearest neighbors (KNN) weight the data better. We will discuss the detail later in part 2, let us evaluate the result of KNN on missing value now. Fortunately, the ratio of normal and missing data is in 60%:40% form. Thus, we will consider the normal data be training data and the missing value be testing data.
+
+We then use 10 folds cross-validation to find the optimal nearest neighbors. Below graph shows the optimal neighbors is K=5.
+
+
+```{r, fig.height=3, fig.width=5}
+train_control = trainControl(method  = "CV")
+KNN_tai = train(LotFrontage ~ ., 
+             method     = "knn",
+             tuneGrid   = expand.grid(k = 1:50),
+             trControl  = train_control,
+             metric     = "RMSE",
+             data       = subhouse)
+plot(KNN_tai)
+#show the least RMSE 
+KNN_tai$results[KNN_tai$results$RMSE == min(KNN_tai$results$RMSE),]
+```
+
+The RMSE of K=5 is 18.30317, which is an acceptable result. We will use this model to predict the missing value. The below graph shows the missing value are much closer to the normal distribution.
+
+```{r, fig.height=5, fig.width=8}
+#reset the variable
+NAhouse <- house[is.na(house$LotFrontage), -1] 
+subhouse <- house[!is.na(house$LotFrontage), -1]
+#
+
+pred_knn = predict(KNN_tai, NAhouse)
+
+NAhouse$LotFrontage = pred_knn
+new_house = rbind(NAhouse, subhouse)
+qqnorm(new_house$LotFrontage, main = 'Normal Q-Q Plot after filling the missing value')
+qqline(subhouse$LotFrontage, col = "steelblue", lwd = 2)
+
+```
+
+Split the data into training and testing set
+```{r}
+set.seed(4011)
+house = new_house
+train = sample(nrow(house), size = nrow(house) * 0.8)
+#model.matrix
+house_matric = model.matrix(SalePrice ~ . , house)
+#
+house_train = house[train,-1]
+house_test = house[-train,-1]
+```
+
+Model fitting
+
+LASSO Regression
+
+LASSO regression is a statistical learning method which is very similar to simple linear regression, except there is a penalty on the error, which we called lambda. “LASSO” regression stands for Least Absolute Shrinkage and Selection Operator. This method can avoid overfitting by using the technique called regularization. Regularization is basically adding a penalty to the residual of the training data, thus resulting a higher variance on the validation data. As a result, it will overfit the training data less and perhaps perform better on the testing data. The formula of LASSO regression is $\sum{(y_i-\sum{x_{ij}\beta_j)^2}}+\lambda\sum|\beta_j|$. Where λ = shrinkage, when λ = 0, it is equal to linear regression, when λ = ∞ , it means the model cannot predict anything. When λ increase, the bias increase, when λ decrease, variance decrease. 
+
+Data cleaning
+
+In this project, we will try 2 different approaches on categorical variable, i.e. creating dummy variable by using “base::model.matrix” and one-hot encoding. We will report the result of creating dummy variable first, then report the result of one-hot encoding. It is also a good chance to analyse the difference between one-hot encoding and label encoding and figure out which method is superior. 
+
+One-hot encoding
+
+Original model
+This below 2 figures shows when λ increase, the coefficient will decrease. When log⁡(λ) is about 9, the coefficient will converge to 0. Also, we can observe the 4^thand the 6^th coefficient are the first two to be the non-zero number when λ drops, which corresponds to “LotShapeIR2” and “LogShapeReg”. Thus, we can conclude that the simplest model should be SalePrice ~ LotShapeIR2 + LogShapeReg.
+
+```{r, fig.height=3, fig.width=5}
+house_train = house_matric[train,-1]
+house_test = house_matric[-train,-1]
+library(glmnet)
+x = house_train
+y = house$SalePrice[train]
+grid = 10^seq(10,-2,length=100)
+#1st model
+lasso.mod=glmnet(x, y, alpha=1, lambda=grid)
+plot(lasso.mod, "norm", label = TRUE)
+plot(lasso.mod, "lambda", label = TRUE)
+```
+
+Parameter tuning
+
+We will use grid search to search for the optimal lambda. The grid is range from (-2^10,12^10) and it contains 100 value. Which means we will fit 100 LASSO regression models in this grid.
+The RMSE from our 10-folds cross-validation is the criteria to choose our λ. The below figure shows when log⁡(λ) is around 7.394695, it has the lowest RMSE on the validation set. 
+
+
+```{r, fig.height=3, fig.width=5}
+par(mfrow=c(1,1))
+#cross validation
+set.seed(4011)
+cv.out=cv.glmnet(x, y, alpha=1)
+plot(cv.out)
+#best lambda
+bestlam2=cv.out$lambda.min
+#best lambda
+bestlam2
+#best log(lambda)
+log(bestlam2)
+```
+
+Result
+
+We then apply this model to see the performance on it and the testing dataset. The RMSE is about 39354.13, which is a reasonable error. 
+Let us look at the variable importance plot to see which variable contributes the most to the model.
+
+```{r, fig.height=3, fig.width=5}
+#test data
+testData = house_test
+#best model
+lasso.pred = predict(lasso.mod, s=bestlam2, newx = testData)
+RSS = sum((lasso.pred - house$SalePrice[-train])^(2))
+MSE = RSS/nrow(house_test)
+RMSE = sqrt(MSE)
+vip::vip(lasso.mod)
+
+```
+It seems “LotShapeIR2” and “OverallCond” contributes the most to the model. The other variables are not as important as we think. 
+
+label encoding 
+
+It is time to see how label encoding works in this model. label encoding is a method that simply converts all categories into numerical values that follows chronological order. 
+
+Let us look at the original first.
+
+```{r}
+set.seed(4011)
+house = new_house
+house$LotShape = as.numeric(factor(house$LotShape))
+train = sample(nrow(house), size = nrow(house) * 0.8)
+#
+house_train = house[train,]
+house_test = house[-train,]
+x = as.matrix(house_train[,-ncol(house_train)])
+y = house_train$SalePrice
+grid = 10^seq(10,-2,length=100)
+#1st model
+lasso.mod=glmnet(x, y, alpha=1, lambda=grid)
+names(lasso.mod$beta[,100])
+plot(lasso.mod, "norm", label = TRUE)
+plot(lasso.mod, "lambda", label = TRUE)
+```
+
+As we can see, there is not much difference between one-hot encoding. Let us look at the λ and see if there is any difference.
+
+```{r, fig.height=3, fig.width=5}
+par(mfrow=c(1,1))
+#cross validation
+set.seed(4011)
+cv.out=cv.glmnet(x, y, alpha=1)
+plot(cv.out)
+#best lambda
+bestlam2=cv.out$lambda.min
+#best lambda
+bestlam2
+#best log(lambda)
+log(bestlam2)
+```
+Seems there is not much difference too, the optimal log⁡(λ) is 7.580763 and the RMSE is 38848.29, which is slightly lower than using dummy variable. Finally, let us have a look at the variable importance plot and see if the is any difference between them.
+
+```{r, fig.height=3, fig.width=5}
+#test data
+testData = as.matrix(house_test[,-ncol(house_test)])
+#best model
+lasso.pred = predict(lasso.mod, s=bestlam2, newx = testData)
+RSS = sum((lasso.pred - house$SalePrice[-train])^(2))
+MSE = RSS/nrow(house_test)
+RMSE = sqrt(MSE)
+vip::vip(lasso.mod)
+```
+Surprisingly, the variable importance plot shows there is a much difference between one-hot encoding and label encoding. It actually provides a much balance variable importance plot, but we can still observe that ‘OverallCond” is one of the most dominating factors among these 2 different methods.
+
+Advantage
+
+It will push the correlated variables towards together, avoiding those variables is extremely large with different sign. Furthermore, it will convert the features which creates no prediction power at all to 0, i.e. doing feature selection automatically. 
+
+Disadvantage
+
+Although we are getting a less overfit model, it means we are giving up some data, it may result in reducing accuracy. However, it is an art to find the balance between overfit and underfit. 
+
+
+
+Regression tree
+
+Before explaining what regression tree is, let’s start with what is decision tree. Decision tree is a tree to make decision at every notes. It has two components, the condition statement, and the solution statement, and at the end which we called leaf, we will obtain the answer. When the predicted outcome is continuous, it is considered as regression tree, when the predicted outcome is categorical, it is considered as classification tree. The below figure may provide a learer explanation.
+
+![decision tree](C:/Users/cheng/OneDrive/Desktop/hw/STAT4011/pj2/pic/1_rSQIIAboJftqAv_BReNipg.png)
+
+Now back our original dataset. The original tree is illustrating as follow.
+```{r, fig.height=3, fig.width=5}
+set.seed(4012)
+train = sample(1:nrow(house),nrow(house)/2)
+test_tree = house[-train, 'SalePrice']
+reg_tree = tree(SalePrice ~ ., data = house[train,], method = 'class')
+summary(reg_tree)
+#plot
+plot(reg_tree)
+text(reg_tree, pretty = 0, cex = 0.3)
+#result and MSE
+pred_10 = predict(reg_tree, house[-train,])
+RMSE = RSS = sum((pred_10 - house$SalePrice[-train])^(2))
+MSE = RSS/nrow(house_test)
+RMSE = sqrt(MSE)
+RMSE
+```
+The RMSE is 78553.74
+
+Parameter tuning
+
+When tuning the parameters of a decision tree, we usually called it pruning. If the depth of a tree is too deep, it sometimes may even overfit the model resulting a worse result. Thus, cutting some nodes out and reducing the depth may provide us a better result. 
+We performed a cross-validation too see the effect of depth of a tree on RMSE and the result is as follow. 
+
+
+```{r, fig.height=3, fig.width=5}
+cv_reg_tree = cv.tree(reg_tree)
+plot(cv_reg_tree$size, cv_reg_tree$dev, type = 'b', ylab = 'error of regression tree', xlab = 'tree size')
+```
+
+As we can see, when the depth of the tree is 6 and 8, The model performs the best on the validation set.
+The RMSE of them are 77879.7 and 75469.8, respectively.
+
+```{r, fig.height=3, fig.width=5}
+prune_reg_tree = prune.tree(reg_tree, best = 6)
+plot(prune_reg_tree)
+text(prune_reg_tree, cex = 0.7)
+pred = predict(prune_reg_tree, newdata = house[-train,])
+#plot
+RSS = sum((pred - house$SalePrice[-train])^(2))
+MSE = RSS/nrow(house_test)
+RMSE = sqrt(MSE)
+print('RMSE')
+print('______________')
+RMSE
+#RMSE too high, try another one
+```
+
+the RMSE is too high, we will try another one
+```{r, fig.height=3, fig.width=5}
+prune_reg_tree = prune.tree(reg_tree, best = 8)
+plot(prune_reg_tree)
+text(prune_reg_tree, cex = 0.7)
+pred = predict(prune_reg_tree, newdata = house[-train,])
+#plot
+RSS = sum((pred - house$SalePrice[-train])^(2))
+MSE = RSS/nrow(house_test)
+RMSE = sqrt(MSE)
+RMSE
+```
+The above regression tree is the final tree we choose.
+
+```{r, fig.height=3, fig.width=5}
+#plot
+par(mfrow = c(1,2))
+plot(pred_10, test_tree, ylab = 'actual price', xlab = 'predicted price', main = 'tree size of 10')
+abline(0,1)
+plot(pred, test_tree, ylab = 'actual price', xlab = 'predicted price', main = 'tree size of 8')
+abline(0,1)
+
+```
+This figure shows the performance of different depth of tree on predicting the price.
+
+Observation
+
+We can observe that the trees are limited by the number of leafs the tree have and the performance of regression tress is worse than LASSO regression. This may explain by the dataset are continuous, but the model gives us a discrete answer, resulting this comparatively bad result
+
+Advantage
+
+One advantage of regression trees is it is easy to interpret. We don’t even need any word to explain what logic of the model is and a layman can follow it. Moreover, it has only one parameter meaning that the model is easy to use and tune.
+
+Disadvantage
+
+However, we can see that the model is not doing a very good job. Since decision tree is designed for predicting categorical variable, the bad result from the model is explainable, especially the dataset is discrete instead of continuous.
+
+
+Boosting
+
+Introduction
+
+Boosting is a combination of weak learners. Usually, the weak learners are decision trees with shallow depth. The procedure of boosting is as follow, it train a weak learner first. Then It train a new weak leaner base on the error from the previous tree. Repeat the above process for n times and weight them respectively. Finally, obtain the result according to the weight. Since boosting is a relatively complicated model which involving quite a lot of parameters, we will discuss them in a more detail manner.
+Type of boosting
+Please note that there are many types of boosting, for simplicity, gradient boosting machine (GBM) is chosen in this case. However, when boosting is mentioned, we cannot ignore the fact that Adaptive Boosting (Adaboost) is as famous as GBM. So we will discuss a bit about the difference between Adaboost and GBM. 
+Basically, Adaboost did not train the model base on the residual, but on the whole dataset, weight the weak learner either positively or negatively, according to the correctness done by the learner. The below figure may give us an even more intuitive example.
+
+![Adaboost](C:/Users\cheng\OneDrive\Desktop\hw\STAT4011\pj2\pic\Picture1.png)
+As mentioned before, GBM is trained base on the residual as below figure and it uses gradient descent to find the optimal solution.
+
+![GBM](C:/Users\cheng\OneDrive\Desktop\hw\STAT4011\pj2\pic\Picture2.png)
+
+Parameter tuning
+
+Before looking into what does the parameter means, let us look at the effect of different parameters on the residual from boosting. A 10-folds cross-validation has been done and result are shown below.
+
+we will sepreate it into 2 chunks since it cost so much time
+```{r, warning=FALSE, results='hide',message=FALSE}
+set.seed(4012)
+train = sample(1:nrow(house),nrow(house)/2)
+house_train = house[train,]
+house_test = house[-train,]
+caretGrid <- expand.grid(interaction.depth=c(1, 3, 5, 7, 9), 
+                         n.trees = (0:50)*50,
+                         shrinkage=c(0.05, 0.025, 0.01, 0.001),
+                         n.minobsinnode=10)
+metric <- "RMSE"
+numfolds = invisible(trainControl( method = "cv", number = 10))
+cv_gbm = train(SalePrice ~ ., 
+               data = house_train,
+               method = 'gbm', 
+               trControl = numfolds,
+               tuneGrid=caretGrid,
+               metric = metric)
+```
+
+
+```{r, fig.height=3, fig.width=5}
+#summary(cv_gbm)
+plot(cv_gbm)
+```
+
+It is time to explain what the parameters mean in order to have a much clearer picture. Shrinkage represent the learning rate. It is better to know what gradient descent is before explaining learning rate.
+
+![Gradient Descent](C:/Users/cheng/OneDrive/Desktop/hw/STAT4011/pj2/pic/Picture3.png)
+
+Basically, gradient descent is like rolling a ball under the curve. Whereas learning rate (or shrinkage) is the distance the ball move before reaching the optimal solution. Max tree depth meaning the maximum of every weaker learner (regression tree in this case).
+As we can see from the graph, when shrinkage is larger than 0.001, the model converges within 500 trees. However, when shrinkage equals to 0.001, the model is still converging. It may mean the model requires more trees to obtain convergence. 
+
+Model Summary
+```{r}
+set.seed(4011)
+cv_gbm$bestTune
+#predict test and compare
+pred = predict(cv_gbm, house_test)
+RSS = sum((pred - house_test$SalePrice)^(2))
+MSE = RSS/nrow(house_test)
+RMSE = sqrt(MSE)
+RMSE
+```
+The best model is when number of trees equals to 550, maximum depth of trees are 5 and the learning rate is equal to 0.01. The RMSE of this model is 34532.22.
+
+
+```{r, fig.height=3, fig.width=5}
+#fit a gbm
+house_train$LotShape = as.factor(house_train$LotShape)
+gbm.fit.final <- gbm::gbm(
+  formula = SalePrice ~ .,
+  distribution = "gaussian",
+  data = house_train,
+  n.trees = 550,
+  interaction.depth = 5,
+  shrinkage = 0.01,
+  n.minobsinnode = 10, 
+  cv.folds = 10, 
+  n.cores = NULL, 
+  verbose = FALSE
+  )
+par(mar = c(5, 8, 1, 1))
+summary(
+gbm.fit.final, # gbm object
+las=2
+)
+
+```
+
+The above figure is the variable importance plot of the model. As we can see, it gives us a much reasonable explanation than LASSO regression.
+
+Advantage
+
+One advantage of using GBM is GBM provides us a much accurate result. It has the best prediction ability among all models in this project.
+
+Disadvantage
+
+However, GBM is a black box model. Which mean we are hare to explain to laymen the concept of it and how it works. Furthermore, it requires the computer specification quite a lot, especially during grid search. Last but not least, it involves quite a lot of parameters, thus it may be hard to find the best parameters for this particular dataset.
+
+Conclusion
+
+Model	                                    RMSE
+
+LASSO Regression (One-hot encoding)	      39354.13
+
+LASSO Regression (Label encoding)	        38848.29
+
+Regression tree	                          75469.8
+
+Gradient Boosting Machine	                34532.22
+
+As we can observe from the table, GBM perform the best, which is not surprising since it sacrifices the training speed instead of accuracy. Surprisingly, LASSO did quite a good job compare to GBM. That mean in some cases, especially when we are looking for efficient instead of accuracy, LASSO regression can take into our consideration. Whereas we can also conclude that regression tree performs worse when the dependent variable of our dataset is continuous, we may consider avoiding applying a single regression tress on dataset like this.
+
+
+Part 2
+```{r}
+work_dir = 'C:\\Users\\cheng\\OneDrive\\Desktop\\hw\\STAT4011\\pj2\\data\\'
+Titanic <- data.frame(read.csv(paste0(work_dir,'Titanic.csv')))
+set.seed(4011)
+```
+
+import required library
+```{r, warning=FALSE, results='hide',message=FALSE}
+library(MASS)
+library(caret)
+library(tree)
+library(rpart)
+library(rfUtilities)
+library(randomForest)
+library(e1071)
+library(MLmetrics)
+```
+
+Data cleaning
+
+Similar to part 1, we have observed missing data. However, rather than using KNN to fill in the missing data, we would like to fill in the missing data by boosting this time since we are impressed by the performance of it in part 1. We use the non-missing data as training set and the missing data as testing set.
+We can figure out that the missing data are mainly focus on age. Again, we will look at the performance of each parameters.
+
+
+![Gradient Descent](C:/Users/cheng/OneDrive/Desktop/hw/STAT4011/pj2/pic/Picture3.png)
+
+we will skip the output of this chunk
+```{r, warning=FALSE, results='hide',message=FALSE}
+set.seed(4011)
+Titanic$Sex = as.factor(Titanic$Sex)
+Titanic$Embarked = as.factor(Titanic$Embarked)
+Titanic = Titanic[,-1]
+NAage = Titanic[is.na(Titanic$Age), ]
+subage = Titanic[!is.na(Titanic$Age), ]
+caretGrid <- expand.grid(interaction.depth=c(1, 3, 5, 7, 9), 
+                         n.trees = (0:50)*50,
+                         shrinkage=c(0.05, 0.025, 0.01, 0.001),
+                         n.minobsinnode=10)
+numfolds = trainControl( method = "cv", number = 10)
+na_gbm = train(Age ~ . ,
+               data = subage,
+               method = 'gbm', 
+               trControl = numfolds,
+               tuneGrid=caretGrid
+               )
+```
+
+
+```{r, fig.height=3, fig.width=5}
+plot(na_gbm)
+na_gbm$bestTune
+```
+
+As we can see, when number of trees is at 250, maximum depth of each trees is 9, learning rate equals to 0.01, the model performs the best. Let us look at which feature contributes to age the most then.
+
+```{r, fig.height=3, fig.width=5}
+set.seed(4011)
+new_gbm = gbm::gbm(
+          formula = Age ~ .,
+          distribution = "gaussian",
+          data = subage,
+          n.trees = 1150,
+          interaction.depth = 9,
+          shrinkage = 0.01,
+          n.minobsinnode = 10, 
+          cv.folds = 10, 
+          n.cores = NULL, 
+          verbose = FALSE
+          )
+pred_age <- predict(new_gbm, NAage)
+par(mar = c(5, 8, 1, 1))
+summary(
+new_gbm, # gbm object
+las=2
+)
+NAage$Age = round(as.numeric(pred_age))
+df = rbind(subage, NAage)
+```
+
+```{r}
+df[,1] = as.factor(df[,1])
+df[,2] = as.factor(df[,2])
+
+```
+
+train data and test data 
+```{r}
+set.seed(4011)
+tin = df
+train = sample(nrow(Titanic), nrow(Titanic)*0.8)
+tin_train = tin[train,]
+tin_test = tin[-train,]
+```
+
+
+K-nearest neighbours (KNN)
+
+KNN is basically like a voting method. Below figure may give us an intuitive explanation.
+
+![KNN](C:/Users/cheng/OneDrive/Desktop/hw/STAT4011/pj2/pic/Picture4.png)
+
+Assume we have 2 independent variables X_1 and X_2, the red star represents the location we are currently at and we want to know if the red star is belongs to Class A or Class B. We first decide K, which is the number of nearest neighbours around the star. Then we vote for it, if the elements in Class B is more than Class A, we can classify the red star belongs to Class B. The larger the K, the more neighbours taken into consideration.
+
+Accuracy vs F1-score
+
+Nowadays, F1-score becomes a popular method in order to measure the accuracy. However, in this project, only pure accuracy will be considered. i.e.
+accuracy=$(TP+TN)/(TP+TN+FP+FN)$
+The reason of only considering accuracy instead of F1-score is under this type dataset, precision will not be taken into account of consideration. We will discuss the difference between accuracy and F1-score in the result part. But in general, F1-score will overestimate the result of the model under this type of dataset.
+
+Parameter tuning
+
+As we can see from the figure. When K=9, the model has the highest accuracy, the accuracy is 0.6945882 under 10-folds cross-validation.
+
+```{r, fig.height=3, fig.width=5}
+set.seed(4012)
+train_control = trainControl(method  = "CV")
+KNN_tai = train(Survived ~ ., 
+             method     = "knn",
+             tuneGrid   = expand.grid(k = 2:60),
+             trControl  = train_control,
+             metric     = "Accuracy",
+             data       = tin_train)
+#best K
+KNN_tai$bestTune
+plot(KNN_tai)
+```
+Result
+
+The accuracy of KNN on the testing set is 0.66. However, the F1-score on KNN is 0.7213115. This is because F1-score taken precision into account, whilst this type of dataset will produce a constant number of outputs, leading to a higher F1-score. The confusion matrix is as follow.
+
+```{r, fig.height=3, fig.width=5}
+pred_knn = predict(KNN_tai, tin_test)
+tab = table(pred_knn, tin_test$Survived)
+#accuracy table
+tab
+acc = sum(diag(tab))/sum(tab)
+#accuracy
+acc
+#F1-score
+F1_Score(pred_knn, tin_test$Survived, positive = NULL)
+```
+
+Advantage
+
+On advantage of KNN is it is very easy to implement KNN, and we can update the dataset easily without giving the computer too much burden. Furthermore, the parameter is easy to tune.
+
+Disadvantage
+
+KNN is not excel at dealing with high dimension problem. It is also very sensitive to noise or outlier, so we must ensure the dataset is clean enough.
+
+
+Random Forest
+
+Introduction
+
+Similar to GBM, random forest is one of the powerful models. Random forest basically has the very similar structure with GBM too. The concept of random forest is by combining weak learner all together and obtain the result. But rather than weighting the weak learner or train the weak learner base on the residual, random forest basically averaging result from all weak learners. The graph below may let us easier to understand the concept.
+
+![Random Forest](C:/Users/cheng/OneDrive/Desktop/hw/STAT4011/pj2/pic/Picture5.png)
+
+```{r, fig.height=3, fig.width=5}
+set.seed(4011)
+rf_list = list()
+acc = c()
+control <- trainControl(method="repeatedcv", number=10, repeats=3, search="random")
+rf_random <- train(Survived~., data=tin_train, method="rf", tuneLength=15, trControl=control)
+plot(rf_random)
+```
+We can see that when the maximum depth of trees is 3, the accuracy is the highest.
+We will take that result and see how it perform.
+
+```{r}
+pred = predict(rf_random, tin_test)
+#confusion matrix
+tab = table(pred, tin_test$Survived)
+tab
+#accuracy
+sum(diag(tab))/sum(tab)
+```
+
+Result
+
+The confusion matrix is shown above and the accuracy is 0.86. We can see there is a great improvement compare to KNN.
+
+Advantage
+
+One advantage of random forest is it can achieves a higher accuracy as it is an ensemble model. Furthermore, it don't have many parameters to tune allowing us to obtain the optimal solution without too much effort
+
+Disadvantage
+
+However, random forest requires quite a lot time compare to other algorithm and it is a black-box model, which means it is not that easy to explain how it actually works to a layman.
+
+Conclusion
+
+Model	                                    accuracy
+
+KNN                                       0.69
+
+Random forest                             0.86
+
+As we can see, random forest outperform KNN, but it takes much time to obtain those accuracy. So if the time of execution is important, we will choose KNN, vice versa. We also figure out in this kind of dataset, usingh pure accuracy will be a better choice than using F1-score. 
+
+
+Reference
+
+https://www.vebuso.com/2020/01/decision-tree-intuition-from-concept-to-application/
+
+https://medium.com/greyatom/a-quick-guide-to-boosting-in-ml-acf7c1585cb5
+
+https://blog.clairvoyantsoft.com/the-ascent-of-gradient-descent-23356390836f?gi=d499e53d1359
+
+https://dslytics.wordpress.com/2017/11/16/classification-series-5-k-nearest-neighbors-knn/
+
+https://levelup.gitconnected.com/random-forest-regression-209c0f354c84
+
+
